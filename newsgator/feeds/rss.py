@@ -26,15 +26,29 @@ class RssFeedProvider(FeedProvider):
     async def fetch(
         self, source: Source, client: httpx.AsyncClient
     ) -> list[FetchedArticle]:
+        return await self._fetch_from_url(source.url, client)
+
+    async def _fetch_from_url(
+        self, url: str, client: httpx.AsyncClient
+    ) -> list[FetchedArticle]:
+        """Shared helper: fetch the feed at ``url`` and parse it.
+
+        Split from ``fetch`` so subclasses (e.g. YoutubeFeedProvider) can
+        resolve their own URL before delegating, without having to mutate
+        the Source object.
+        """
         try:
             response = await client.get(
-                source.url,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8"},
+                url,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+                },
                 follow_redirects=True,
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.warning("RSS fetch failed for %s: %s", source.url, exc)
+            logger.warning("RSS fetch failed for %s: %s", url, exc)
             return []
 
         # feedparser.parse() is synchronous and CPU-bound on large feeds —
@@ -44,12 +58,12 @@ class RssFeedProvider(FeedProvider):
         if parsed.bozo and not parsed.entries:
             logger.warning(
                 "RSS feed %s could not be parsed: %s",
-                source.url,
+                url,
                 getattr(parsed, "bozo_exception", "unknown error"),
             )
             return []
 
-        return [self._entry_to_article(entry, source.url) for entry in parsed.entries]
+        return [self._entry_to_article(entry, url) for entry in parsed.entries]
 
     @staticmethod
     def _entry_to_article(entry: Any, source_url: str) -> FetchedArticle:
