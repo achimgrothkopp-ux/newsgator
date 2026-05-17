@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from PySide6.QtCore import QSize, Qt, Signal
@@ -208,6 +208,21 @@ class ArticleListWidget(QWidget):
 
     def entry_count(self) -> int:
         return self._model.rowCount()
+
+    def mark_read(self, article_id: int) -> None:
+        """Replace the entry for ``article_id`` with an is_read=True copy and
+        request a repaint of that row. Called when ArticleView opens an item."""
+        for row in range(self._model.rowCount()):
+            item = self._model.item(row)
+            entry: ArticleListEntry | None = item.data(ENTRY_ROLE)
+            if entry is None or entry.id != article_id:
+                continue
+            if entry.is_read:
+                return
+            item.setData(replace(entry, is_read=True), ENTRY_ROLE)
+            idx = self._model.index(row, 0)
+            self._view.update(idx)
+            return
 
     def _on_current_changed(self, current, _previous) -> None:
         if not current.isValid():

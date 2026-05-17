@@ -1,8 +1,6 @@
 """Top-level QMainWindow with the 3-panel layout.
 
 Layout: Quellen-Sidebar (~220 px) | Artikel-Liste (~380 px) | Vorschau (rest).
-Article list and preview are still placeholders — they'll be replaced in the
-following steps.
 """
 
 from __future__ import annotations
@@ -10,31 +8,14 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QFrame,
-    QLabel,
-    QMainWindow,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QMainWindow, QSplitter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from newsgator.ui.article_list import ArticleListWidget
+from newsgator.ui.article_view import ArticleView
 from newsgator.ui.source_panel import SourcePanel
 
 logger = logging.getLogger(__name__)
-
-
-def _placeholder(title: str) -> QWidget:
-    panel = QFrame()
-    panel.setFrameShape(QFrame.Shape.StyledPanel)
-    layout = QVBoxLayout(panel)
-    label = QLabel(title)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label.setStyleSheet("color: #888; font-size: 14px;")
-    layout.addWidget(label)
-    return panel
 
 
 class MainWindow(QMainWindow):
@@ -50,7 +31,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.source_panel = SourcePanel(session_factory)
         self.article_list = ArticleListWidget(session_factory)
-        self.article_view = _placeholder("Vorschau")
+        self.article_view = ArticleView(session_factory)
 
         splitter.addWidget(self.source_panel)
         splitter.addWidget(self.article_list)
@@ -63,12 +44,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(splitter)
 
         self.source_panel.selection_changed.connect(self.article_list.on_source_selection)
-        self.article_list.article_selected.connect(self._on_article_selected)
+        self.article_list.article_selected.connect(self.article_view.on_article_selected)
+        self.article_view.article_marked_read.connect(self.article_list.mark_read)
 
     async def refresh(self) -> None:
         """Reload the sidebar from DB. Called on startup and after a sync."""
         await self.source_panel.reload()
-
-    def _on_article_selected(self, article_id: int) -> None:
-        # Wired up to the (real) preview pane in the next step.
-        logger.info("article selected: id=%s", article_id)
