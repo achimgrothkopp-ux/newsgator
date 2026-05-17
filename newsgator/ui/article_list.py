@@ -27,11 +27,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from newsgator.models.article import Article
 from newsgator.models.source import Source
+from newsgator.ui.filter_toolbar import ArticleFilter, FilterToolbar
 from newsgator.ui.source_panel import SourceSelection
 
 logger = logging.getLogger(__name__)
@@ -60,13 +61,17 @@ class ArticleListEntry:
 async def fetch_entries(
     session_factory: async_sessionmaker[AsyncSession],
     selection: SourceSelection,
+    article_filter: ArticleFilter | None = None,
 ) -> list[ArticleListEntry]:
+    filt = article_filter or ArticleFilter()
+
     stmt = (
         select(Article, Source.title)
         .join(Source, Article.source_id == Source.id)
         .order_by(Article.published_at.desc().nulls_last(), Article.id.desc())
         .limit(LIST_LIMIT)
     )
+    # Sidebar scope.
     if selection.kind == "source" and selection.source_id is not None:
         stmt = stmt.where(Article.source_id == selection.source_id)
     elif selection.kind == "category":
@@ -74,7 +79,20 @@ async def fetch_entries(
             stmt = stmt.where(Source.category.is_(None))
         else:
             stmt = stmt.where(Source.category == selection.category)
-    # kind == "all": no filter
+    # kind == "all": no sidebar filter
+
+    # Toolbar overlay.
+    if filt.unread_only:
+        stmt = stmt.where(Article.is_read.is_(False))
+    if filt.search:
+        like = f"%{filt.search}%"
+        stmt = stmt.where(
+            or_(
+                Article.title.ilike(like),
+                Article.summary.ilike(like),
+                Article.content.ilike(like),
+            )
+        )
 
     async with session_factory() as session:
         rows = (await session.execute(stmt)).all()
@@ -175,10 +193,14 @@ class ArticleListWidget(QWidget):
     ) -> None:
         super().__init__(parent)
         self._session_factory = session_factory
+        self._current_selection: SourceSelection | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        self._toolbar = FilterToolbar()
+        layout.addWidget(self._toolbar)
 
         self._view = QListView()
         self._model = QStandardItemModel(self._view)
@@ -187,16 +209,36 @@ class ArticleListWidget(QWidget):
         self._view.setUniformItemSizes(True)
         self._view.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self._view.selectionModel().currentChanged.connect(self._on_current_changed)
-        layout.addWidget(self._view)
+        layout.addWidget(self._view, 1)
+
+        self._toolbar.filter_changed.connect(self._on_filter_changed)
 
     def on_source_selection(self, selection: SourceSelection) -> None:
         """Slot connected to SourcePanel.selection_changed (sync entry point)."""
         asyncio.create_task(self.load_articles(selection))
 
     async def load_articles(self, selection: SourceSelection) -> None:
-        entries = await fetch_entries(self._session_factory, selection)
+        self._current_selection = selection
+        await self._apply()
+
+    def _on_filter_changed(self, _filter: ArticleFilter) -> None:
+        # No sidebar selection yet (startup); nothing to filter.
+        if self._current_selection is None:
+            return
+        asyncio.create_task(self._apply())
+
+    async def _apply(self) -> None:
+        if self._current_selection is None:
+            return
+        filt = self._toolbar.current()
+        entries = await fetch_entries(self._session_factory, self._current_selection, filt)
         self._populate(entries)
-        logger.info("article list: loaded %d entries for %s", len(entries), selection)
+        logger.info(
+            "article list: loaded %d entries for %s (filter=%s)",
+            len(entries),
+            self._current_selection,
+            filt,
+        )
 
     def _populate(self, entries: list[ArticleListEntry]) -> None:
         self._model.clear()
