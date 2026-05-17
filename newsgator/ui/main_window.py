@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from newsgator.ui.source_panel import SourcePanel, SourceSelection
+from newsgator.ui.article_list import ArticleListWidget
+from newsgator.ui.source_panel import SourcePanel
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.source_panel = SourcePanel(session_factory)
-        self.article_list = _placeholder("Artikel")
+        self.article_list = ArticleListWidget(session_factory)
         self.article_view = _placeholder("Vorschau")
 
         splitter.addWidget(self.source_panel)
@@ -61,12 +62,13 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
 
-        self.source_panel.selection_changed.connect(self._on_source_selected)
+        self.source_panel.selection_changed.connect(self.article_list.on_source_selection)
+        self.article_list.article_selected.connect(self._on_article_selected)
 
     async def refresh(self) -> None:
         """Reload the sidebar from DB. Called on startup and after a sync."""
         await self.source_panel.reload()
 
-    def _on_source_selected(self, selection: SourceSelection) -> None:
-        # Wired up to the (real) article list in the next step.
-        logger.info("selection: %s", selection)
+    def _on_article_selected(self, article_id: int) -> None:
+        # Wired up to the (real) preview pane in the next step.
+        logger.info("article selected: id=%s", article_id)
