@@ -18,12 +18,15 @@ from newsgator.models.database import dispose_engine, get_session_factory, init_
 from newsgator.models.source import Source
 from newsgator.sync.store import store_articles
 
-# Veritasium — picked because the channel is huge and stable across all three
-# URL forms; if YouTube ever breaks one of these patterns, the test will tell.
+# Veritasium for the three channel-URL forms (stable, huge, easy to spot
+# regressions). Plus Lex Fridman's "Lex Fridman Podcast" playlist to verify
+# playlist-URL handling — the playlist contains only full episodes, not the
+# topic-clips the channel feed mixes in.
 CHANNELS = [
     "https://www.youtube.com/@veritasium",
     "https://www.youtube.com/channel/UCHnyfMqiRRG1u-2MsSQLbXA",
     "https://www.youtube.com/feeds/videos.xml?channel_id=UCHnyfMqiRRG1u-2MsSQLbXA",
+    "https://www.youtube.com/playlist?list=PLrAXtmErZgOdP_8GztsuKi9nrraNbKKp4",
 ]
 
 
