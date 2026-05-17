@@ -6,6 +6,7 @@ import asyncio
 import logging
 import sys
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
@@ -18,6 +19,10 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # QtWebEngine requires shared OpenGL contexts and must be set before
+    # the QApplication is instantiated.
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
     app = QApplication(sys.argv)
     app.setApplicationName("Newsgator")

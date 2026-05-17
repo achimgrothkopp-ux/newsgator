@@ -15,7 +15,10 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -72,7 +75,20 @@ class AddSourceDialog(QDialog):
         for cat in existing_categories:
             if cat and cat.strip():
                 self._category_combo.addItem(cat)
-        form.addRow("Kategorie", self._category_combo)
+
+        # ComboBox + "+" button on the same row so the user can spin up a
+        # brand-new category without leaving the dialog.
+        cat_row = QWidget()
+        cat_layout = QHBoxLayout(cat_row)
+        cat_layout.setContentsMargins(0, 0, 0, 0)
+        cat_layout.setSpacing(6)
+        cat_layout.addWidget(self._category_combo, 1)
+        self._new_cat_button = QPushButton("+")
+        self._new_cat_button.setFixedWidth(28)
+        self._new_cat_button.setToolTip("Neue Kategorie anlegen")
+        self._new_cat_button.clicked.connect(self._on_new_category)
+        cat_layout.addWidget(self._new_cat_button)
+        form.addRow("Kategorie", cat_row)
 
         layout.addLayout(form)
 
@@ -99,3 +115,17 @@ class AddSourceDialog(QDialog):
     def _update_ok_state(self, _text: str) -> None:
         url = self._url_edit.text().strip().lower()
         self._ok_button.setEnabled(url.startswith(("http://", "https://")))
+
+    def _on_new_category(self) -> None:
+        name, ok = QInputDialog.getText(
+            self, "Neue Kategorie", "Name der Kategorie:"
+        )
+        if not ok:
+            return
+        name = name.strip()
+        if not name:
+            return
+        # Add to the dropdown if it isn't there already, then select it.
+        if self._category_combo.findText(name) < 0:
+            self._category_combo.addItem(name)
+        self._category_combo.setCurrentText(name)

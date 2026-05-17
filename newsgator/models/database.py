@@ -74,13 +74,31 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def init_db(db_path: Path | str | None = None) -> None:
-    """Create all tables. Safe to call repeatedly."""
+    """Create all tables. Safe to call repeatedly.
+
+    Also seeds the ``categories`` registry from any pre-existing
+    ``Source.category`` values so categories from older DBs remain in
+    dropdowns after the registry table was introduced.
+    """
     # Import models so their tables are registered on Base.metadata.
-    from newsgator.models import article, source  # noqa: F401
+    from newsgator.models import article, category, source  # noqa: F401
 
     engine = get_engine(db_path)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Backfill: every distinct category in `sources` should also have a row
+    # in `categories`. INSERT OR IGNORE keeps this a no-op on subsequent runs.
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT OR IGNORE INTO categories(name) "
+                "SELECT DISTINCT category FROM sources "
+                "WHERE category IS NOT NULL AND TRIM(category) <> ''"
+            )
+        )
 
 
 async def dispose_engine() -> None:

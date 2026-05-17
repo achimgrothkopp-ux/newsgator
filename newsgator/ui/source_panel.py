@@ -48,7 +48,8 @@ class SourcePanel(QWidget):
         self._session_factory = session_factory
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Breathing room so items don't kiss the window edge on top or left.
+        layout.setContentsMargins(8, 8, 0, 0)
         layout.setSpacing(0)
 
         self._tree = QTreeWidget()
@@ -59,7 +60,13 @@ class SourcePanel(QWidget):
 
     async def reload(self) -> None:
         """Re-query sources and rebuild the tree. Keeps the current selection
-        if it still exists, otherwise falls back to "Alle Artikel"."""
+        if it still exists, otherwise falls back to "Alle Artikel".
+
+        Signals stay blocked across the whole rebuild — including the
+        re-selection step — so we don't emit ``selection_changed`` purely
+        because of the rebuild. We only re-emit at the end if the logical
+        selection actually changed (different SourceSelection value).
+        """
         async with self._session_factory() as session:
             stmt = select(Source).order_by(
                 Source.category.is_(None),  # categorized first
@@ -70,47 +77,55 @@ class SourcePanel(QWidget):
 
         previous = self.current_selection()
         self._tree.blockSignals(True)
-        self._tree.clear()
+        try:
+            self._tree.clear()
 
-        all_item = QTreeWidgetItem([ALL_LABEL])
-        all_item.setData(0, Qt.ItemDataRole.UserRole, SourceSelection(kind="all"))
-        self._tree.addTopLevelItem(all_item)
+            all_item = QTreeWidgetItem([ALL_LABEL])
+            all_item.setData(0, Qt.ItemDataRole.UserRole, SourceSelection(kind="all"))
+            self._tree.addTopLevelItem(all_item)
 
-        by_category: dict[str | None, list[Source]] = defaultdict(list)
-        for s in sources:
-            by_category[s.category].append(s)
+            by_category: dict[str | None, list[Source]] = defaultdict(list)
+            for s in sources:
+                by_category[s.category].append(s)
 
-        ordered_categories = sorted(
-            by_category.keys(),
-            key=lambda c: (c is None, (c or "").lower()),
-        )
-        for category in ordered_categories:
-            cat_label = category if category is not None else UNCATEGORIZED_LABEL
-            srcs = by_category[category]
-            cat_item = QTreeWidgetItem([f"{cat_label}  ({len(srcs)})"])
-            cat_item.setData(
-                0,
-                Qt.ItemDataRole.UserRole,
-                SourceSelection(kind="category", category=category),
+            ordered_categories = sorted(
+                by_category.keys(),
+                key=lambda c: (c is None, (c or "").lower()),
             )
-            self._tree.addTopLevelItem(cat_item)
-            for s in srcs:
-                src_item = QTreeWidgetItem([s.title or s.url])
-                src_item.setData(
+            for category in ordered_categories:
+                cat_label = category if category is not None else UNCATEGORIZED_LABEL
+                srcs = by_category[category]
+                cat_item = QTreeWidgetItem([f"{cat_label}  ({len(srcs)})"])
+                cat_item.setData(
                     0,
                     Qt.ItemDataRole.UserRole,
-                    SourceSelection(
-                        kind="source",
-                        source_id=s.id,
-                        category=s.category,
-                    ),
+                    SourceSelection(kind="category", category=category),
                 )
-                cat_item.addChild(src_item)
+                self._tree.addTopLevelItem(cat_item)
+                for s in srcs:
+                    src_item = QTreeWidgetItem([s.title or s.url])
+                    src_item.setData(
+                        0,
+                        Qt.ItemDataRole.UserRole,
+                        SourceSelection(
+                            kind="source",
+                            source_id=s.id,
+                            category=s.category,
+                        ),
+                    )
+                    cat_item.addChild(src_item)
 
-        self._tree.expandAll()
-        self._tree.blockSignals(False)
+            self._tree.expandAll()
+            self._restore_selection(previous)
+        finally:
+            self._tree.blockSignals(False)
 
-        self._restore_selection(previous)
+        # Only fire downstream work if the user-visible selection actually
+        # changed — a category create/rename that leaves the same source
+        # selected should NOT re-load the article list.
+        new_selection = self.current_selection()
+        if new_selection is not None and new_selection != previous:
+            self.selection_changed.emit(new_selection)
 
     def current_selection(self) -> SourceSelection | None:
         items = self._tree.selectedItems()
