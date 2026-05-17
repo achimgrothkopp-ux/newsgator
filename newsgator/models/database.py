@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -47,6 +48,20 @@ def get_engine(db_path: Path | str | None = None, *, echo: bool = False) -> Asyn
     url = f"sqlite+aiosqlite:///{db_path}"
     _engine = create_async_engine(url, echo=echo, future=True)
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
+
+    # SQLite ships with foreign_keys=OFF by default. Without this the schema-
+    # level ON DELETE CASCADE never fires, and deleting a source leaves its
+    # articles orphaned. Since SQLite then reuses freed primary-key rowids,
+    # the orphans get "adopted" by the next source that happens to land on
+    # the same id. Enabling FKs at every connect fixes both problems.
+    @event.listens_for(_engine.sync_engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, _connection_record):  # pragma: no cover
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys = ON")
+        finally:
+            cursor.close()
+
     return _engine
 
 

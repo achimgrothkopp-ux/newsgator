@@ -21,6 +21,7 @@ import logging
 import sys
 
 from sqlalchemy import delete, select
+from sqlalchemy.sql import exists as sql_exists
 
 from newsgator.models.article import Article
 from newsgator.models.database import get_session_factory, init_db
@@ -100,8 +101,31 @@ async def cmd_remove(args: argparse.Namespace) -> int:
             print(f"no source with id {args.id}")
             return 1
         print(f"removing #{src.id} [{src.feed_type}] {src.title}")
-        await session.execute(delete(Source).where(Source.id == args.id))
+        # session.delete triggers the relationship cascade; combined with the
+        # DB-level ON DELETE CASCADE (now active via PRAGMA foreign_keys=ON)
+        # it's belt-and-braces against orphaned articles.
+        await session.delete(src)
         await session.commit()
+    return 0
+
+
+async def cmd_cleanup(_: argparse.Namespace) -> int:
+    """Delete articles whose source no longer exists.
+
+    One-time fix for DBs that were touched before PRAGMA foreign_keys was
+    enabled — the original ``remove`` bypassed cascade so orphans accumulated,
+    and SQLite reusing primary-key rowids then attached them to whatever
+    source landed on the same id next.
+    """
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as session:
+        stmt = delete(Article).where(
+            ~sql_exists().where(Source.id == Article.source_id)
+        )
+        result = await session.execute(stmt)
+        await session.commit()
+        print(f"removed {result.rowcount} orphan article(s)")
     return 0
 
 
@@ -170,6 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_seed = sub.add_parser("seed", help="add a curated starter set (idempotent)")
     p_seed.set_defaults(func=cmd_seed)
+
+    p_clean = sub.add_parser(
+        "cleanup",
+        help="delete articles whose source no longer exists (one-time DB fix)",
+    )
+    p_clean.set_defaults(func=cmd_cleanup)
 
     return p
 
