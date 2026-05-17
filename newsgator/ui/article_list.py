@@ -227,6 +227,12 @@ class ArticleListWidget(QWidget):
         self._current_selection = selection
         await self._apply()
 
+    async def reload_current(self) -> None:
+        """Re-run the current filter+selection query. Used after a sync."""
+        if self._current_selection is None:
+            return
+        await self._apply()
+
     def _on_filter_changed(self, _filter: ArticleFilter) -> None:
         # No sidebar selection yet (startup); nothing to filter.
         if self._current_selection is None:
