@@ -1,8 +1,4 @@
-"""Entry point: wires the Qt event loop into asyncio via qasync.
-
-Started either with ``python -m newsgator`` or the ``newsgator`` console
-script defined in pyproject.toml.
-"""
+"""Entry point: wires the Qt event loop into asyncio via qasync."""
 
 from __future__ import annotations
 
@@ -13,6 +9,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
+from newsgator.models.database import get_session_factory, init_db
 from newsgator.ui.main_window import MainWindow
 
 
@@ -29,10 +26,16 @@ def main() -> int:
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    window = MainWindow()
+    session_factory = get_session_factory()
+    window = MainWindow(session_factory)
     window.show()
 
+    async def _startup() -> None:
+        await init_db()
+        await window.refresh()
+
     with loop:
+        loop.create_task(_startup())
         loop.run_forever()
     return 0
 
