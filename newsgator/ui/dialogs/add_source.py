@@ -45,9 +45,14 @@ class AddSourceDialog(QDialog):
         self,
         parent: QWidget | None = None,
         existing_categories: Iterable[str] = (),
+        *,
+        initial: NewSourceSpec | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Neue Quelle hinzufügen")
+        self._edit_mode = initial is not None
+        self.setWindowTitle(
+            "Quelle bearbeiten" if self._edit_mode else "Neue Quelle hinzufügen"
+        )
         self.setMinimumWidth(440)
         self.setModal(True)
 
@@ -96,12 +101,24 @@ class AddSourceDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         self._ok_button = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
-        self._ok_button.setText("Hinzufügen")
+        self._ok_button.setText("Speichern" if self._edit_mode else "Hinzufügen")
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
 
         self._url_edit.textChanged.connect(self._update_ok_state)
+
+        if initial is not None:
+            type_idx = self._type_combo.findData(initial.feed_type)
+            if type_idx >= 0:
+                self._type_combo.setCurrentIndex(type_idx)
+            self._url_edit.setText(initial.url)
+            self._title_edit.setText(initial.title)
+            if initial.category:
+                if self._category_combo.findText(initial.category) < 0:
+                    self._category_combo.addItem(initial.category)
+                self._category_combo.setCurrentText(initial.category)
+
         self._update_ok_state("")
 
     def values(self) -> NewSourceSpec:

@@ -38,6 +38,14 @@ def main() -> int:
     async def _startup() -> None:
         await init_db()
         await window.refresh()
+        await window.start_background_sync()
+
+    # Cancel the scheduler task as the app starts tearing down; the qasync
+    # loop is still spinning at this point so the cancellation actually
+    # reaches the task before the loop is closed.
+    app.aboutToQuit.connect(
+        lambda: asyncio.ensure_future(window.stop_background_sync())
+    )
 
     with loop:
         loop.create_task(_startup())

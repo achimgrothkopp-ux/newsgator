@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -60,11 +61,15 @@ class FeedScheduler:
         *,
         interval_minutes: float = DEFAULT_INTERVAL_MINUTES,
         http_timeout: float = DEFAULT_HTTP_TIMEOUT,
+        on_sync_complete: Callable[[list[SourceSyncResult]], None] | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._interval = max(1.0, interval_minutes) * 60
         self._http_timeout = http_timeout
         self._task: asyncio.Task[None] | None = None
+        # Fired after every background sync_all (not on manual UI-triggered
+        # sync_all — those handle their own UI updates).
+        self._on_sync_complete = on_sync_complete
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -84,9 +89,15 @@ class FeedScheduler:
     async def _loop(self) -> None:
         while True:
             try:
-                await self.sync_all()
+                results = await self.sync_all()
             except Exception:  # pragma: no cover - safety net
                 logger.exception("sync_all crashed; will retry next tick")
+            else:
+                if self._on_sync_complete is not None:
+                    try:
+                        self._on_sync_complete(results)
+                    except Exception:  # pragma: no cover - never let UI bugs break the loop
+                        logger.exception("on_sync_complete callback raised")
             await asyncio.sleep(self._interval)
 
     async def sync_all(self) -> list[SourceSyncResult]:

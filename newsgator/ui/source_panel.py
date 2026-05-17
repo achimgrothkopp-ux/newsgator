@@ -11,8 +11,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtWidgets import (
+    QMenu,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -27,6 +28,20 @@ UNCATEGORIZED_LABEL = "(Ohne Kategorie)"
 ALL_LABEL = "Alle Artikel"
 
 
+def _matches(candidate: object, target: "SourceSelection") -> bool:
+    """True if ``candidate`` represents the same user intent as ``target``.
+
+    For source rows we compare by source_id alone so an edited source still
+    counts as "the same row" even if its category changed. For categories
+    and "all", exact equality is what we want.
+    """
+    if not isinstance(candidate, SourceSelection):
+        return False
+    if target.kind == "source":
+        return candidate.kind == "source" and candidate.source_id == target.source_id
+    return candidate == target
+
+
 @dataclass(slots=True, frozen=True)
 class SourceSelection:
     """What the user picked in the sidebar."""
@@ -38,6 +53,10 @@ class SourceSelection:
 
 class SourcePanel(QWidget):
     selection_changed = Signal(object)  # SourceSelection
+    # Right-click on a source row → "Bearbeiten…" / "Löschen". Categories
+    # and "Alle Artikel" have no context menu.
+    source_edit_requested = Signal(int)
+    source_delete_requested = Signal(int)
 
     def __init__(
         self,
@@ -56,6 +75,8 @@ class SourcePanel(QWidget):
         self._tree.setHeaderHidden(True)
         self._tree.setIndentation(14)
         self._tree.itemSelectionChanged.connect(self._on_selection_changed)
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._tree)
 
     async def reload(self) -> None:
@@ -155,14 +176,16 @@ class SourcePanel(QWidget):
         self._tree.setCurrentItem(first)
 
     def _find_item(self, target: SourceSelection) -> QTreeWidgetItem | None:
-        # Top-level first
+        # For source rows we match by source_id only — a category-rename or
+        # source-edit may have changed the SourceSelection.category field,
+        # but the user's intent ("keep this source selected") is preserved.
         for i in range(self._tree.topLevelItemCount()):
             top = self._tree.topLevelItem(i)
-            if top.data(0, Qt.ItemDataRole.UserRole) == target:
+            if _matches(top.data(0, Qt.ItemDataRole.UserRole), target):
                 return top
             for j in range(top.childCount()):
                 child = top.child(j)
-                if child.data(0, Qt.ItemDataRole.UserRole) == target:
+                if _matches(child.data(0, Qt.ItemDataRole.UserRole), target):
                     return child
         return None
 
@@ -170,3 +193,22 @@ class SourcePanel(QWidget):
         selection = self.current_selection()
         if selection is not None:
             self.selection_changed.emit(selection)
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        item = self._tree.itemAt(pos)
+        if item is None:
+            return
+        value = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(value, SourceSelection) or value.kind != "source":
+            return
+        if value.source_id is None:
+            return
+
+        menu = QMenu(self._tree)
+        edit_action = menu.addAction("Bearbeiten…")
+        delete_action = menu.addAction("Löschen")
+        chosen = menu.exec(self._tree.viewport().mapToGlobal(pos))
+        if chosen is edit_action:
+            self.source_edit_requested.emit(value.source_id)
+        elif chosen is delete_action:
+            self.source_delete_requested.emit(value.source_id)

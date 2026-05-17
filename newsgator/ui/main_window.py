@@ -50,6 +50,14 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         settings().changed.connect(self._apply_theme)
 
+        # One scheduler instance for the whole app life — both the background
+        # loop and the manual Ctrl+R refresh go through it, so we don't pay
+        # the provider/connection setup twice.
+        self._scheduler = FeedScheduler(
+            session_factory,
+            on_sync_complete=self._on_background_sync_done,
+        )
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.source_panel = SourcePanel(session_factory)
         self.article_list = ArticleListWidget(session_factory)
@@ -70,6 +78,8 @@ class MainWindow(QMainWindow):
 
         self.source_panel.selection_changed.connect(self.article_list.on_source_selection)
         self.source_panel.selection_changed.connect(lambda _sel: self.article_view.clear())
+        self.source_panel.source_edit_requested.connect(self.open_edit_source_dialog)
+        self.source_panel.source_delete_requested.connect(self.confirm_delete_source)
         self.article_list.article_selected.connect(self.article_view.on_article_selected)
         self.article_view.article_marked_read.connect(self.article_list.mark_read)
 
@@ -351,20 +361,149 @@ class MainWindow(QMainWindow):
             f"Quelle hinzugefügt: {spec.title or spec.url}", 5000
         )
 
+    # ---------- edit / delete source -----------------------------------
+
+    def open_edit_source_dialog(self, source_id: int) -> None:
+        asyncio.create_task(self._edit_source_async(source_id))
+
+    async def _edit_source_async(self, source_id: int) -> None:
+        async with self._session_factory() as session:
+            source = await session.get(Source, source_id)
+            if source is None:
+                QMessageBox.warning(self, "Quelle weg", "Die Quelle existiert nicht mehr.")
+                return
+            initial = NewSourceSpec(
+                feed_type=source.feed_type,
+                url=source.url,
+                title=source.title or "",
+                category=source.category or "",
+            )
+            registered = set(
+                (await session.execute(select(Category.name))).scalars().all()
+            )
+            in_use = set(
+                c
+                for c in (
+                    await session.execute(
+                        select(Source.category).where(Source.category.is_not(None))
+                    )
+                ).scalars().all()
+                if c
+            )
+            categories = sorted(registered | in_use, key=str.lower)
+
+        dialog = AddSourceDialog(self, existing_categories=categories, initial=initial)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        await self._persist_source_edit(source_id, dialog.values())
+
+    async def _persist_source_edit(self, source_id: int, spec: NewSourceSpec) -> None:
+        async with self._session_factory() as session:
+            source = await session.get(Source, source_id)
+            if source is None:
+                return
+            # URL changed → make sure we're not stepping on another source.
+            if source.url != spec.url:
+                collision = await session.scalar(
+                    select(Source).where(
+                        Source.url == spec.url, Source.id != source_id
+                    )
+                )
+                if collision is not None:
+                    QMessageBox.warning(
+                        self,
+                        "URL existiert bereits",
+                        f"Die URL ist schon Quelle #{collision.id}.",
+                    )
+                    return
+            source.url = spec.url
+            source.title = spec.title or spec.url
+            source.feed_type = spec.feed_type
+            source.category = spec.category or None
+            if spec.category:
+                exists = await session.scalar(
+                    select(Category).where(Category.name == spec.category)
+                )
+                if exists is None:
+                    session.add(Category(name=spec.category))
+            await session.commit()
+
+        await self.source_panel.reload()
+        await self.article_list.reload_current()
+        self.statusBar().showMessage(
+            f"Quelle aktualisiert: {spec.title or spec.url}", 5000
+        )
+
+    def confirm_delete_source(self, source_id: int) -> None:
+        asyncio.create_task(self._delete_source_async(source_id))
+
+    async def _delete_source_async(self, source_id: int) -> None:
+        async with self._session_factory() as session:
+            source = await session.get(Source, source_id)
+            if source is None:
+                return
+            title = source.title or source.url
+
+        confirm = QMessageBox.question(
+            self,
+            "Quelle löschen",
+            (
+                f"Quelle '{title}' und alle zugehörigen Artikel wirklich löschen? "
+                "Das kann nicht rückgängig gemacht werden."
+            ),
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        async with self._session_factory() as session:
+            source = await session.get(Source, source_id)
+            if source is None:
+                return
+            await session.delete(source)
+            await session.commit()
+
+        await self.source_panel.reload()
+        self.statusBar().showMessage(f"Quelle gelöscht: {title}", 5000)
+
     # ---------- sync flow ----------------------------------------------
+
+    async def start_background_sync(self) -> None:
+        """Kick off the periodic 15-minute sync loop."""
+        await self._scheduler.start()
+        logger.info("background sync loop started")
+
+    async def stop_background_sync(self) -> None:
+        await self._scheduler.stop()
 
     def trigger_sync(self) -> None:
         asyncio.create_task(self._sync_async())
 
     async def _sync_async(self) -> None:
         self.statusBar().showMessage("Synchronisiere…")
-        scheduler = FeedScheduler(self._session_factory)
-        results = await scheduler.sync_all()
+        results = await self._scheduler.sync_all()
         total_new = sum(r.new_articles for r in results)
         errors = sum(1 for r in results if r.error)
         msg = f"Sync fertig: {total_new} neue Artikel"
         if errors:
             msg += f", {errors} Fehler (siehe Log)"
         self.statusBar().showMessage(msg, 8000)
+        await self.source_panel.reload()
+        await self.article_list.reload_current()
+
+    def _on_background_sync_done(self, results) -> None:
+        """Scheduler-thread-safe (we share one event loop with Qt under qasync)
+        callback fired after each automatic sync_all."""
+        total_new = sum(r.new_articles for r in results)
+        errors = sum(1 for r in results if r.error)
+        if total_new > 0 or errors > 0:
+            msg = f"Auto-Sync: {total_new} neue Artikel"
+            if errors:
+                msg += f", {errors} Fehler"
+            self.statusBar().showMessage(msg, 6000)
+        # Refresh the visible state — sidebar counts and the open list — but
+        # do it as a task so the scheduler loop can move on to its sleep.
+        asyncio.create_task(self._refresh_after_background_sync())
+
+    async def _refresh_after_background_sync(self) -> None:
         await self.source_panel.reload()
         await self.article_list.reload_current()
