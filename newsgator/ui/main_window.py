@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(splitter)
 
         self.source_panel.selection_changed.connect(self.article_list.on_source_selection)
+        self.source_panel.selection_changed.connect(lambda _sel: self.article_view.clear())
         self.article_list.article_selected.connect(self.article_view.on_article_selected)
         self.article_view.article_marked_read.connect(self.article_list.mark_read)
 

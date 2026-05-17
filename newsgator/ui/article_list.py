@@ -45,6 +45,8 @@ UNREAD_DOT_R = 4
 
 UNREAD_DOT_COLOR = QColor("#2563eb")  # tailwind blue-600
 META_COLOR = QColor("#6b7280")        # tailwind gray-500
+READ_TITLE_COLOR = QColor("#9ca3af")  # tailwind gray-400
+READ_META_COLOR = QColor("#b0b6bf")   # ~ tailwind gray-350
 
 LIST_LIMIT = 500
 
@@ -122,11 +124,15 @@ class ArticleDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Selection background.
+        # Selection background takes precedence over read/unread colors:
+        # otherwise grey-on-blue is unreadable when a read row is selected.
         if option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
             text_color = option.palette.highlightedText().color()
             meta_color = text_color
+        elif entry.is_read:
+            text_color = READ_TITLE_COLOR
+            meta_color = READ_META_COLOR
         else:
             text_color = option.palette.text().color()
             meta_color = META_COLOR

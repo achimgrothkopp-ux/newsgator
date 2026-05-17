@@ -61,6 +61,11 @@ class ArticleView(QWidget):
         """Slot for ArticleListWidget.article_selected (sync entry point)."""
         asyncio.create_task(self.load_article(article_id))
 
+    def clear(self) -> None:
+        """Reset the pane to its placeholder — used when the sidebar
+        selection changes so the previous source's article doesn't linger."""
+        self._browser.setHtml(PLACEHOLDER_HTML)
+
     async def load_article(self, article_id: int) -> None:
         async with self._session_factory() as session:
             article = await session.get(Article, article_id)
