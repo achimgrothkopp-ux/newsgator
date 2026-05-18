@@ -310,9 +310,10 @@ dev = ["ruff", "mypy", "pytest", "pytest-asyncio"]
 
 ## Ziel: v0.1 Release
 
-- [ ] RSS/Atom/YouTube-Feeds abrufbar und dargestellt
-- [ ] 3-Panel-UI funktionsfähig
-- [ ] Hintergrund-Sync alle 15 Minuten
-- [ ] Archivieren und Lesen ohne Internet
-- [ ] Link teilen / in Browser öffnen
-- [ ] Flatpak oder AppImage paketiert
+- [x] RSS/Atom/YouTube-Feeds abrufbar und dargestellt
+- [x] 3-Panel-UI funktionsfähig
+- [x] Hintergrund-Sync alle 15 Minuten
+- [x] Archivieren und Lesen ohne Internet
+- [ ] ~~Link teilen / in Browser öffnen~~ → in Phase 2 (Android), auf
+  dem Desktop nicht benötigt
+- [x] Flatpak oder AppImage paketiert *(Flatpak)*
