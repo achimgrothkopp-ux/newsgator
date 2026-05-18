@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder app icon for Newsgator. Replace with a real mark before
+     submitting to Flathub. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2d3a"/>
+      <stop offset="1" stop-color="#0d1620"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="22" ry="22" fill="url(#bg)"/>
+
+  <!-- Stylized N -->
+  <path d="M 36 92 L 36 36 L 50 36 L 78 76 L 78 36 L 92 36 L 92 92 L 78 92 L 50 52 L 50 92 Z"
+        fill="#e6edf3"/>
+
+  <!-- RSS-style accent arcs in the top-right corner -->
+  <g fill="none" stroke="#4a9eff" stroke-linecap="round">
+    <circle cx="98" cy="30" r="3" fill="#4a9eff" stroke="none"/>
+    <path d="M 92 36 a 10 10 0 0 1 10 -10" stroke-width="3"/>
+    <path d="M 86 42 a 18 18 0 0 1 18 -18" stroke-width="3"/>
+  </g>
+</svg>

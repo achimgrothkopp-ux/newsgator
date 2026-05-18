@@ -27,3 +27,10 @@ venv/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Flatpak build artifacts
+flatpak/.flatpak-builder/
+flatpak/build/
+flatpak/repo/
+flatpak/.flatpak-pip-generator*
+flatpak/.pip-gen-venv/

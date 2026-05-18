@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.achimgrothkopp_ux.Newsgator</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Newsgator</name>
+  <summary>News-Aggregator für RSS, HTTP und YouTube</summary>
+
+  <description>
+    <p>
+      Newsgator ist ein schlanker Desktop-Newsreader für Linux. Er aggregiert
+      Inhalte aus RSS- und Atom-Feeds, beliebigen HTTP-Seiten (Volltext-
+      Extraktion via trafilatura) und YouTube-Kanälen oder -Playlists.
+    </p>
+    <p>Funktionen:</p>
+    <ul>
+      <li>Drei-Spalten-Layout aus Quellen-Sidebar, Artikelliste und Vorschau</li>
+      <li>Hintergrund-Sync (Standard alle 15 Minuten)</li>
+      <li>Artikel archivieren für Offline-Lesen</li>
+      <li>Reader-Ansicht mit eingebetteten Bildern und optionalem Browser-Tab</li>
+      <li>OPML-Import und -Export</li>
+      <li>Volltextsuche über Titel, Zusammenfassung und Inhalt</li>
+      <li>Dark- und Light-Mode</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.achimgrothkopp_ux.Newsgator.desktop</launchable>
+
+  <url type="homepage">https://github.com/achimgrothkopp-ux/newsgator</url>
+  <url type="bugtracker">https://github.com/achimgrothkopp-ux/newsgator/issues</url>
+  <url type="vcs-browser">https://github.com/achimgrothkopp-ux/newsgator</url>
+
+  <developer id="io.github.achimgrothkopp_ux">
+    <name>Achim Grothkopp</name>
+  </developer>
+
+  <categories>
+    <category>Network</category>
+    <category>News</category>
+  </categories>
+
+  <keywords>
+    <keyword>news</keyword>
+    <keyword>feed</keyword>
+    <keyword>rss</keyword>
+    <keyword>atom</keyword>
+    <keyword>aggregator</keyword>
+    <keyword>youtube</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1" />
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Hauptfenster mit Drei-Spalten-Layout</caption>
+      <image>https://raw.githubusercontent.com/achimgrothkopp-ux/newsgator/main/flatpak/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#4a6f8a</color>
+    <color type="primary" scheme_preference="dark">#1f2d3a</color>
+  </branding>
+
+  <releases>
+    <release version="0.1.0" date="2026-05-18">
+      <description>
+        <p>Erste Vorabversion.</p>
+        <ul>
+          <li>RSS-, Atom-, HTTP- und YouTube-Feeds</li>
+          <li>Hintergrund-Sync und manuelles Aktualisieren</li>
+          <li>Archivierung mit trafilatura-Volltext-Extraktion</li>
+          <li>Bilder im Reader-Tab werden async geladen und skaliert</li>
+          <li>OPML-Import/-Export, Kategorien-Verwaltung</li>
+          <li>Dark-/Light-Theme</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

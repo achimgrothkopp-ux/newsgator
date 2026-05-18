@@ -1,0 +1,21 @@
+# Mirror of [project.dependencies] in pyproject.toml MINUS pyside6 — kept in
+# sync by hand. PySide6 is provided by the Flathub BaseApp io.qt.PySide.BaseApp
+# (referenced via base/base-version in the manifest), so it must NOT appear
+# here or flatpak-pip-generator will refuse to run.
+#
+# Used by flatpak-pip-generator to produce python-deps.yaml with pinned URLs
+# and SHA256 hashes for a reproducible Flatpak build (Flathub builders have
+# no network access at build time).
+qasync>=0.27
+sqlalchemy[asyncio]>=2.0
+aiosqlite>=0.20
+feedparser>=6.0
+httpx>=0.27
+trafilatura>=1.12
+yt-dlp>=2024.1
+
+# Transitive pin: greenlet 3.5.0 sdist has an invalid pyproject.toml that
+# trips the runtime's stricter setuptools (both `license.file` and
+# `license.text` keys present). 3.1.x is the most-deployed stable line and
+# builds cleanly from sdist.
+greenlet<3.2

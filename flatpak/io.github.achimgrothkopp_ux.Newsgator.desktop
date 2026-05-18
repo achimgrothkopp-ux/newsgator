@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Newsgator
+GenericName=News Reader
+Comment=Linux-Desktop-Newsreader für RSS, Atom, HTTP-Quellen und YouTube
+Exec=newsgator
+Icon=io.github.achimgrothkopp_ux.Newsgator
+Terminal=false
+Categories=Network;News;Qt;
+Keywords=news;feed;rss;atom;reader;aggregator;youtube;
+StartupNotify=true
+StartupWMClass=Newsgator
