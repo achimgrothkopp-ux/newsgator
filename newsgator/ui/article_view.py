@@ -23,13 +23,15 @@ from datetime import datetime
 
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QTabWidget, QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from newsgator.models.article import Article
 from newsgator.models.source import Source
+from newsgator.ui.image_text_browser import ImageTextBrowser
 from newsgator.ui.settings import settings
 from newsgator.ui.theme import ThemePalette, palette_for
+from newsgator.utils.archive import archive_article, unarchive_article
 
 READER_TAB = 0
 WEB_TAB = 1
@@ -53,6 +55,8 @@ HTML_TAG_RE = re.compile(r"</[a-zA-Z]+>|<br\s*/?>", re.IGNORECASE)
 
 class ArticleView(QWidget):
     article_marked_read = Signal(int)  # Article.id
+    article_archive_changed = Signal(int, bool)  # Article.id, is_archived
+    archive_failed = Signal(str)  # error message for the status bar
 
     def __init__(
         self,
@@ -69,7 +73,7 @@ class ArticleView(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
-        self._browser = QTextBrowser()
+        self._browser = ImageTextBrowser()
         self._browser.setOpenExternalLinks(True)
         self._browser.setHtml(_placeholder_html(palette_for(settings().theme())))
         self._tabs.addTab(self._browser, "Reader")
@@ -87,12 +91,14 @@ class ArticleView(QWidget):
         self._current_title: str | None = None
         self._current_article_id: int | None = None
         self._current_url: str | None = None
+        self._current_is_archived: bool = False
         # Last URL handed to the QWebEngineView — avoids redundant reloads
         # when the user just toggles tabs.
         self._loaded_web_url: str | None = None
         # Track the in-flight article load so a rapid second selection can
         # cancel the previous one instead of marking-as-read in cascade.
         self._load_task: asyncio.Task[None] | None = None
+        self._archive_task: asyncio.Task[None] | None = None
 
         settings().changed.connect(self._on_settings_changed)
 
@@ -112,7 +118,14 @@ class ArticleView(QWidget):
         self._current_title = None
         self._current_article_id = None
         self._current_url = None
+        self._current_is_archived = False
         self._loaded_web_url = None
+
+    def current_article_id(self) -> int | None:
+        return self._current_article_id
+
+    def current_is_archived(self) -> bool:
+        return self._current_is_archived
 
     def _on_settings_changed(self) -> None:
         if self._current_article_id is None:
@@ -161,11 +174,12 @@ class ArticleView(QWidget):
                 font_size_pt=s.font_size_pt(),
             )
             self._current_title = article.title
+            self._current_is_archived = bool(article.is_archived)
 
         self._current_html = html
         self._current_article_id = article_id
         self._current_url = article.url or None
-        self._browser.setHtml(html)
+        self._browser.set_article_html(html)
 
         # If the user is already on the Webseite tab, swap the URL right away;
         # otherwise let _on_tab_changed handle it lazily on first switch.
@@ -175,6 +189,39 @@ class ArticleView(QWidget):
         if was_unread:
             self.article_marked_read.emit(article_id)
             logger.info("article %d marked as read", article_id)
+
+    def toggle_archive(self) -> None:
+        """Archive or unarchive the article currently on screen.
+
+        Emits ``article_archive_changed`` after the DB write so the article
+        list can re-paint its row without a full reload. Concurrent re-clicks
+        cancel the previous task to avoid two competing fetches.
+        """
+        if self._current_article_id is None:
+            return
+        if self._archive_task is not None and not self._archive_task.done():
+            self._archive_task.cancel()
+        self._archive_task = asyncio.create_task(self._run_toggle_archive())
+
+    async def _run_toggle_archive(self) -> None:
+        article_id = self._current_article_id
+        if article_id is None:
+            return
+        want_archive = not self._current_is_archived
+        if want_archive:
+            result = await archive_article(article_id, self._session_factory)
+        else:
+            result = await unarchive_article(article_id, self._session_factory)
+        if not result.ok:
+            logger.warning("archive toggle failed: %s", result.error)
+            self.archive_failed.emit(result.error or "Archivieren fehlgeschlagen")
+            self.article_archive_changed.emit(article_id, self._current_is_archived)
+            return
+        self._current_is_archived = want_archive
+        self.article_archive_changed.emit(article_id, want_archive)
+        # Re-load so the body switches to/from archived_html and the badge updates.
+        if self._current_article_id == article_id:
+            self.on_article_selected(article_id)
 
     def _on_tab_changed(self, index: int) -> None:
         if index == WEB_TAB:
@@ -212,14 +259,28 @@ def _render_article(
             f"{meta_line}  ·  " if meta_line else ""
         ) + f'<a href="{url_safe}">Original öffnen ›</a>'
 
-    body = _format_content(article.content, article.summary, palette=palette)
+    badge = ""
+    if article.is_archived:
+        badge = (
+            f'<span style="display: inline-block; padding: 2px 8px; '
+            f"margin-left: 8px; border-radius: 8px; "
+            f"background-color: {palette.accent}; color: {palette.bg}; "
+            f'font-size: {max(8, font_size_pt - 2)}pt;">Archiviert</span>'
+        )
+
+    # Archive flag wins over the feed-provided content: we re-fetched the page
+    # with trafilatura specifically so the user has a richer body to read.
+    if article.is_archived and article.archived_html:
+        body = _format_content(article.archived_html, None, palette=palette)
+    else:
+        body = _format_content(article.content, article.summary, palette=palette)
 
     return (
         "<html><body style="
         f'"font-family: {font_family}; font-size: {font_size_pt}pt; '
         f"color: {palette.fg}; background-color: {palette.bg}; "
         'padding: 16px;">'
-        f'<h1 style="margin-bottom: 4px;">{title}</h1>'
+        f'<h1 style="margin-bottom: 4px;">{title}{badge}</h1>'
         f'<p style="color: {palette.fg_muted}; margin-top: 0;">{meta_line}</p>'
         f'<hr style="border: none; border-top: 1px solid {palette.separator};">'
         f"{body}"

@@ -26,6 +26,7 @@ from newsgator.models.source import Source
 
 UNCATEGORIZED_LABEL = "(Ohne Kategorie)"
 ALL_LABEL = "Alle Artikel"
+ARCHIVED_LABEL = "Archiv"
 
 
 def _matches(candidate: object, target: "SourceSelection") -> bool:
@@ -46,7 +47,7 @@ def _matches(candidate: object, target: "SourceSelection") -> bool:
 class SourceSelection:
     """What the user picked in the sidebar."""
 
-    kind: Literal["all", "category", "source"]
+    kind: Literal["all", "category", "source", "archived"]
     source_id: int | None = None
     category: str | None = None
 
@@ -104,6 +105,12 @@ class SourcePanel(QWidget):
             all_item = QTreeWidgetItem([ALL_LABEL])
             all_item.setData(0, Qt.ItemDataRole.UserRole, SourceSelection(kind="all"))
             self._tree.addTopLevelItem(all_item)
+
+            archived_item = QTreeWidgetItem([ARCHIVED_LABEL])
+            archived_item.setData(
+                0, Qt.ItemDataRole.UserRole, SourceSelection(kind="archived")
+            )
+            self._tree.addTopLevelItem(archived_item)
 
             by_category: dict[str | None, list[Source]] = defaultdict(list)
             for s in sources:

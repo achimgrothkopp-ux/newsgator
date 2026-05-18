@@ -24,6 +24,7 @@ class ArticleFilter:
     """Toolbar state applied on top of the sidebar selection."""
 
     unread_only: bool = False
+    archived_only: bool = False
     search: str = ""
 
 
@@ -40,6 +41,10 @@ class FilterToolbar(QWidget):
         self._unread = QCheckBox("Nur ungelesen")
         self._unread.toggled.connect(self._emit_now)
         layout.addWidget(self._unread)
+
+        self._archived = QCheckBox("Nur archiviert")
+        self._archived.toggled.connect(self._emit_now)
+        layout.addWidget(self._archived)
 
         layout.addStretch(1)
 
@@ -60,6 +65,7 @@ class FilterToolbar(QWidget):
     def current(self) -> ArticleFilter:
         return ArticleFilter(
             unread_only=self._unread.isChecked(),
+            archived_only=self._archived.isChecked(),
             search=self._search.text().strip(),
         )
 

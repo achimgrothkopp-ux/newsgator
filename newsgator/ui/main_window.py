@@ -82,6 +82,8 @@ class MainWindow(QMainWindow):
         self.source_panel.source_delete_requested.connect(self.confirm_delete_source)
         self.article_list.article_selected.connect(self.article_view.on_article_selected)
         self.article_view.article_marked_read.connect(self.article_list.mark_read)
+        self.article_view.article_archive_changed.connect(self._on_article_archive_changed)
+        self.article_view.archive_failed.connect(self._on_archive_failed)
 
     async def refresh(self) -> None:
         """Reload the sidebar from DB. Called on startup and after a sync."""
@@ -148,6 +150,11 @@ class MainWindow(QMainWindow):
         feeds_menu.addAction(opml_export)
 
         feeds_menu.addSeparator()
+
+        archive_action = QAction("Aktuellen Artikel &archivieren", self)
+        archive_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        archive_action.triggered.connect(self.toggle_archive_current_article)
+        feeds_menu.addAction(archive_action)
 
         export_html = QAction("Aktuellen Artikel als &HTML speichern…", self)
         export_html.triggered.connect(self.export_current_article_html)
@@ -256,6 +263,26 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"OPML-Export: {len(entries)} Quellen → {path.name}", 8000
         )
+
+    def toggle_archive_current_article(self) -> None:
+        if self.article_view.current_article_id() is None:
+            QMessageBox.information(
+                self,
+                "Kein Artikel ausgewählt",
+                "Bitte zuerst einen Artikel auswählen.",
+            )
+            return
+        if not self.article_view.current_is_archived():
+            self.statusBar().showMessage("Archiviere…")
+        self.article_view.toggle_archive()
+
+    def _on_article_archive_changed(self, article_id: int, is_archived: bool) -> None:
+        self.article_list.mark_archived(article_id, is_archived)
+        msg = "Artikel archiviert" if is_archived else "Artikel aus Archiv entfernt"
+        self.statusBar().showMessage(msg, 4000)
+
+    def _on_archive_failed(self, error: str) -> None:
+        self.statusBar().showMessage(f"Archivieren fehlgeschlagen: {error}", 6000)
 
     def export_current_article_html(self) -> None:
         # Re-uses whatever the article view currently has rendered, so the

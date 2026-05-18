@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QListView,
     QStyle,
@@ -44,6 +44,8 @@ ROW_HEIGHT = 72
 ROW_PAD_X = 12
 ROW_PAD_Y = 10
 UNREAD_DOT_R = 4
+ARCHIVE_MARK_W = 7
+ARCHIVE_MARK_H = 12
 
 LIST_LIMIT = 500
 
@@ -55,6 +57,7 @@ class ArticleListEntry:
     source_title: str
     published_at: datetime | None
     is_read: bool
+    is_archived: bool
 
 
 async def fetch_entries(
@@ -78,11 +81,15 @@ async def fetch_entries(
             stmt = stmt.where(Source.category.is_(None))
         else:
             stmt = stmt.where(Source.category == selection.category)
+    elif selection.kind == "archived":
+        stmt = stmt.where(Article.is_archived.is_(True))
     # kind == "all": no sidebar filter
 
     # Toolbar overlay.
     if filt.unread_only:
         stmt = stmt.where(Article.is_read.is_(False))
+    if filt.archived_only:
+        stmt = stmt.where(Article.is_archived.is_(True))
     if filt.search:
         like = f"%{filt.search}%"
         stmt = stmt.where(
@@ -103,6 +110,7 @@ async def fetch_entries(
             source_title=source_title,
             published_at=article.published_at,
             is_read=article.is_read,
+            is_archived=article.is_archived,
         )
         for article, source_title in rows
     ]
@@ -160,6 +168,24 @@ class ArticleDelegate(QStyledItemDelegate):
 
         text_left = rect.left() + (UNREAD_DOT_R * 2 + 8)
 
+        # Archive bookmark mark at top-right; reserve space so titles elide
+        # before colliding with it.
+        text_right_limit = rect.right()
+        if entry.is_archived:
+            text_right_limit -= ARCHIVE_MARK_W + 6
+            bx = rect.right() - ARCHIVE_MARK_W
+            by = rect.top()
+            path = QPainterPath()
+            path.moveTo(bx, by)
+            path.lineTo(bx + ARCHIVE_MARK_W, by)
+            path.lineTo(bx + ARCHIVE_MARK_W, by + ARCHIVE_MARK_H)
+            path.lineTo(bx + ARCHIVE_MARK_W / 2, by + ARCHIVE_MARK_H - 4)
+            path.lineTo(bx, by + ARCHIVE_MARK_H)
+            path.closeSubpath()
+            painter.setBrush(self._accent)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPath(path)
+
         # Title
         title_font: QFont = option.font
         title_font = QFont(title_font)
@@ -169,7 +195,7 @@ class ArticleDelegate(QStyledItemDelegate):
         painter.setPen(text_color)
         title_metrics = painter.fontMetrics()
         title = title_metrics.elidedText(
-            entry.title, Qt.TextElideMode.ElideRight, rect.right() - text_left
+            entry.title, Qt.TextElideMode.ElideRight, text_right_limit - text_left
         )
         painter.drawText(text_left, rect.top() + title_metrics.ascent() + 2, title)
 
@@ -182,7 +208,7 @@ class ArticleDelegate(QStyledItemDelegate):
         when = _format_when(entry.published_at)
         meta_line = f"{entry.source_title}  ·  {when}" if when else entry.source_title
         meta_line = meta_metrics.elidedText(
-            meta_line, Qt.TextElideMode.ElideRight, rect.right() - text_left
+            meta_line, Qt.TextElideMode.ElideRight, text_right_limit - text_left
         )
         painter.drawText(
             text_left,
@@ -338,6 +364,20 @@ class ArticleListWidget(QWidget):
             if entry.is_read:
                 return
             item.setData(replace(entry, is_read=True), ENTRY_ROLE)
+            idx = self._model.index(row, 0)
+            self._view.update(idx)
+            return
+
+    def mark_archived(self, article_id: int, is_archived: bool) -> None:
+        """Update the archived-flag of one row without a full reload."""
+        for row in range(self._model.rowCount()):
+            item = self._model.item(row)
+            entry: ArticleListEntry | None = item.data(ENTRY_ROLE)
+            if entry is None or entry.id != article_id:
+                continue
+            if entry.is_archived == is_archived:
+                return
+            item.setData(replace(entry, is_archived=is_archived), ENTRY_ROLE)
             idx = self._model.index(row, 0)
             self._view.update(idx)
             return
